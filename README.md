@@ -1,6 +1,9 @@
 # My Exam Template
 
 โปรเจกต์แม่แบบสำหรับการสอบ Full-stack Web Development
+ การโคลน
+# git clone <URL_GITHUB_ของคุณ>
+# cd my-exam-template
 
 ## 🚀 วิธีการรัน Backend
 
@@ -16,3 +19,6 @@
 ## 🌐 วิธีการรัน Frontend
 
 เปิดไฟล์ `frontend/index.html` บน Web Browser
+เชื่อมไฟล์ script.js เข้ากับ HTML
+# <script src="script.js"></script>
+# <link rel="stylesheet" href="style.css">
