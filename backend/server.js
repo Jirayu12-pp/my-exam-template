@@ -1,102 +1,109 @@
-const API_URL = 'http://localhost:5000/api';
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// ดึงข้อมูลมาแสดงทันทีเมื่อโหลดหน้าเว็บ
-document.addEventListener('DOMContentLoaded', loadItems);
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-// 1. ดึงรายการทั้งหมดมาแสดงผล (READ)
-async function loadItems() {
+// 1. ตรวจสอบและสร้างโฟลเดอร์ uploads อัตโนมัติ
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+}
+
+// 2. ตั้งค่า Multer เก็บรูปภาพ
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage });
+
+// 3. เปิด path ให้ดูรูปได้
+app.use('/uploads', express.static(uploadDir));
+
+// --- Data จำลอง 2 ตาราง ---
+let categories = [
+    { id: 1, name: 'ทั่วไป' },
+    { id: 2, name: 'งานด่วน' }
+];
+
+let items = [];
+
+// ==========================================
+// 🔵 1. APIs ตารางที่ 1 (Categories)
+// ==========================================
+app.get('/api/categories', (req, res) => {
+    res.json(categories);
+});
+
+app.post('/api/categories', (req, res) => {
+    const newCat = { id: Date.now(), name: req.body.name };
+    categories.push(newCat);
+    res.status(201).json(newCat);
+});
+
+// ==========================================
+// 🟢 2. APIs ตารางที่ 2 (Items - CRUD ครบชุด)
+// ==========================================
+
+// READ: ดึงรายการทั้งหมด
+app.get('/api/items', (req, res) => {
+    res.json(items);
+});
+
+// CREATE: เพิ่มข้อมูลใหม่พร้อมรูปภาพ
+app.post('/api/items', upload.single('image'), (req, res) => {
     try {
-        const res = await fetch(`${API_URL}/items`);
-        const items = await res.json();
-        
-        const container = document.getElementById('displayArea');
-        if (!container) return;
-        
-        container.innerHTML = '';
+        const newItem = {
+            id: Date.now(),
+            title: req.body.title || '',
+            detail: req.body.detail || '',
+            cat_id: req.body.cat_id || '',
+            image_url: req.file ? `/uploads/${req.file.filename}` : ''
+        };
+        items.push(newItem);
+        res.status(201).json(newItem);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
-        if (items.length === 0) {
-            container.innerHTML = '<p>ยังไม่มีข้อมูลในระบบ</p>';
-            return;
-        }
+// UPDATE: แก้ไขข้อมูลรายการตาม ID (PUT) 🟢 [แก้ไขแล้ว]
+app.put('/api/items/:id', upload.single('image'), (req, res) => {
+    try {
+        // เปลี่ยนมาใช้ Number() เพื่อรองรับ Date.now() แน่นอน
+        const targetId = Number(req.params.id);
+        const index = items.findIndex(item => Number(item.id) === targetId);
 
-        items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.style.cssText = 'border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 8px;';
+        if (index !== -1) {
+            items[index].title = req.body.title || items[index].title;
+            items[index].detail = req.body.detail || items[index].detail;
+            items[index].cat_id = req.body.cat_id || items[index].cat_id;
             
-            card.innerHTML = `
-                ${item.image_url ? `<img src="http://localhost:5000${item.image_url}" width="150" style="display:block; margin-bottom:10px; border-radius:4px;">` : '<p><i>ไม่มีรูปภาพ</i></p>'}
-                <h4>${item.title}</h4>
-                <p>${item.detail}</p>
-                <button type="button" onclick="deleteItem(${item.id})" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">ลบ</button>
-            `;
-            container.appendChild(card);
-        });
-    } catch (err) {
-        console.error('Error loading items:', err);
-    }
-}
+            // อัปเดตรูปใหม่เฉพาะเมื่อมีการอัปโหลดไฟล์ใหม่เข้ามา
+            if (req.file) {
+                items[index].image_url = `/uploads/${req.file.filename}`;
+            }
 
-// 2. บันทึกข้อมูลและอัปโหลดรูปภาพ (CREATE)
-async function sendData(event) {
-    // ป้องกันการ Refresh หน้าเว็บอัตโนมัติจากฟอร์ม
-    if (event) {
-        event.preventDefault();
-    }
-
-    const titleInput = document.getElementById('titleInput');
-    const detailInput = document.getElementById('detailInput');
-    const imageInput = document.getElementById('imageInput');
-
-    if (!titleInput || !titleInput.value.trim()) {
-        alert('กรุณากรอกหัวข้อ');
-        return;
-    }
-
-    // สร้าง FormData เพื่อส่งรูปภาพและข้อความ
-    const formData = new FormData();
-    formData.append('title', titleInput.value);
-    formData.append('detail', detailInput ? detailInput.value : '');
-    
-    if (imageInput && imageInput.files[0]) {
-        formData.append('image', imageInput.files[0]);
-    }
-
-    try {
-        const response = await fetch(`${API_URL}/items`, {
-            method: 'POST',
-            body: formData // ห้ามใส่ Header Content-Type!
-        });
-
-        if (response.ok) {
-            // เคลียร์ค่าในฟอร์มหลังบันทึกสำเร็จ
-            titleInput.value = '';
-            if (detailInput) detailInput.value = '';
-            if (imageInput) imageInput.value = '';
-
-            // โหลดตารางแสดงผลใหม่
-            loadItems();
+            res.json(items[index]);
         } else {
-            alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+            res.status(404).json({ message: 'Item not found' });
         }
     } catch (err) {
-        console.error('Error sending data:', err);
+        console.error(err);
+        res.status(500).json({ error: 'Internal server error' });
     }
-}
+});
 
-// 3. ลบข้อมูล (DELETE)
-async function deleteItem(id) {
-    if (!confirm('ยืนยันการลบรายการนี้?')) return;
+// DELETE: ลบข้อมูลรายการตาม ID 🟢 [แก้ไขแล้ว]
+app.delete('/api/items/:id', (req, res) => {
+    const targetId = Number(req.params.id);
+    items = items.filter(item => Number(item.id) !== targetId);
+    res.json({ message: 'Deleted' });
+});
 
-    try {
-        const response = await fetch(`${API_URL}/items/${id}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            loadItems();
-        }
-    } catch (err) {
-        console.error('Error deleting item:', err);
-    }
-}
+app.listen(5000, () => console.log('Server running on http://localhost:5000'));
